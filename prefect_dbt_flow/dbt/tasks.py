@@ -246,7 +246,7 @@ def generate_tasks_dag(
             for node_unique_id in node.depends_on
         ]
         # Future for the run task
-        future = _chain_tasks(run_task, task_dependencies)
+        future = run_task.submit(wait_for=task_dependencies)
 
         # Check if we should run a dbt test task
         should_run_tests = (
@@ -262,7 +262,7 @@ def generate_tasks_dag(
                 dbt_node=node,
             )
             # Future for the test task, depending on the run future
-            future = _chain_tasks(test_task, future)
+            future = test_task.submit(wait_for=future)
 
         # Check if we should run a Prefect task
         should_run_prefect_task = (
@@ -272,7 +272,10 @@ def generate_tasks_dag(
         )
         if should_run_prefect_task:
             # Future for the Prefect task, depending on the previous future
-            future = _chain_tasks(run_task_after_model, future)
+            future = run_task_after_model.submit(
+                model_id=node.unique_id,
+                wait_for=future,
+            )
 
         # Submit the current future, which may be a chain of dependencies
         submitted_tasks[node.unique_id] = future
@@ -290,7 +293,3 @@ def _get_next_node(
             return node
 
     return None
-
-
-def _chain_tasks(task: Task, dependency: PrefectFuture) -> PrefectFuture:
-    return task.submit(wait_for=dependency)

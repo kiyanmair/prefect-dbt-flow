@@ -77,6 +77,7 @@ class DbtDagOptions:
         exclude: dbt module to exclude in the run
         run_test_after_model: If True, run dbt tests after running each model.
         run_task_after_model: A Prefect task to run after each model.
+            Must have exactly one required parameter: model_id (str).
         vars: dbt vars
         install_deps: install dbt dependencies, default behavior install deps
     """
