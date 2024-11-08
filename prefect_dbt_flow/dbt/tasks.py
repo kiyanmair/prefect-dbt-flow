@@ -245,38 +245,32 @@ def generate_tasks_dag(
 
     submitted_tasks: Dict[str, PrefectFuture] = {}
     while node := _get_next_node(dbt_graph, list(submitted_tasks.keys())):
+        # Get dbt dependencies for current run task
         run_task = all_tasks[node.unique_id]
         task_dependencies = [
             submitted_tasks[node_unique_id] for node_unique_id in node.depends_on
         ]
+        # Future for the run task
+        future = _chain_tasks(run_task, task_dependencies)
 
-        # By default, assume there are no other tasks to run
-        run_task_future = run_task.submit(wait_for=task_dependencies)
-        submitted_tasks[node.unique_id] = run_task_future
-
-        # Conditions which determine if there are other tasks to run
-        run_dbt_test = run_test_after_model and node.has_tests
-        run_prefect_task = run_task_after_model and node.resource_type is DbtResourceType.MODEL
-
-        if run_dbt_test:
+        # Run dbt test task if applicable
+        if run_test_after_model and node.has_tests:
             test_task = _task_dbt_test(
                 project=project,
                 profile=profile,
                 dag_options=dag_options,
                 dbt_node=node,
             )
+            # Future for the test task, depending on the run future
+            future = _chain_tasks(test_task, future)
 
-            # Submit the dbt test task, but wait for the run task
-            test_task_future = test_task.submit(wait_for=run_task_future)
-            submitted_tasks[node.unique_id] = test_task_future
+        # Run Prefect task if applicable
+        if run_task_after_model and node.resource_type is DbtResourceType.MODEL:
+            # Future for the Prefect task, depending on the previous future
+            future = _chain_tasks(run_task_after_model, future)
 
-        if run_prefect_task:
-            # Wait for the dbt test task if it exists
-            if run_dbt_test:
-                prefect_task_future = run_task_after_model.submit(wait_for=test_task_future)
-            else:
-                prefect_task_future = run_task_after_model.submit(wait_for=run_task_future)
-            submitted_tasks[node.unique_id] = prefect_task_future
+        # Submit the current future, which may be a chain of dependencies
+        submitted_tasks[node.unique_id] = future
 
 
 def _get_next_node(
@@ -291,3 +285,7 @@ def _get_next_node(
             return node
 
     return None
+
+
+def _chain_tasks(task: Task, dependency: PrefectFuture) -> PrefectFuture:
+    return task.submit(wait_for=dependency)
