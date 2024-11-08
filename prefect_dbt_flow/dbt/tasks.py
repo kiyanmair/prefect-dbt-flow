@@ -215,6 +215,7 @@ def generate_tasks_dag(
     dag_options: Optional[DbtDagOptions],
     dbt_graph: List[DbtNode],
     run_test_after_model: bool = False,
+    run_task_after_model: Optional[Task] = None,
 ) -> None:
     """
     Generate a Prefect DAG for running and testing dbt models.
@@ -224,7 +225,8 @@ def generate_tasks_dag(
         profile: A class that represents a dbt profile configuration.
         dag_options: A class to add dbt DAG configurations.
         dbt_graph: A list of dbt nodes (models) to include in the DAG.
-        run_test_after_model: If True, run tests after running each model.
+        run_test_after_model: If True, run dbt tests after running each model.
+        run_task_after_model: A Prefect task to run after each model.
 
     Returns:
         None
@@ -247,7 +249,6 @@ def generate_tasks_dag(
         task_dependencies = [
             submitted_tasks[node_unique_id] for node_unique_id in node.depends_on
         ]
-
         run_task_future = run_task.submit(wait_for=task_dependencies)
 
         if run_test_after_model and node.has_tests:

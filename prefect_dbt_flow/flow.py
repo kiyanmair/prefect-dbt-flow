@@ -45,6 +45,7 @@ def dbt_flow(
             dag_options,
             dbt_graph,
             dag_options.run_test_after_model if dag_options else False,
+            dag_options.run_task_after_model if dag_options else False,
         )
 
     return dbt_flow
