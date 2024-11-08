@@ -249,20 +249,34 @@ def generate_tasks_dag(
         task_dependencies = [
             submitted_tasks[node_unique_id] for node_unique_id in node.depends_on
         ]
-        run_task_future = run_task.submit(wait_for=task_dependencies)
 
-        if run_test_after_model and node.has_tests:
+        # By default, assume there are no other tasks to run
+        run_task_future = run_task.submit(wait_for=task_dependencies)
+        submitted_tasks[node.unique_id] = run_task_future
+
+        # Conditions which determine if there are other tasks to run
+        run_dbt_test = run_test_after_model and node.has_tests
+        run_prefect_task = run_task_after_model and node.resource_type is DbtResourceType.MODEL
+
+        if run_dbt_test:
             test_task = _task_dbt_test(
                 project=project,
                 profile=profile,
                 dag_options=dag_options,
                 dbt_node=node,
             )
-            test_task_future = test_task.submit(wait_for=run_task_future)
 
+            # Submit the dbt test task, but wait for the run task
+            test_task_future = test_task.submit(wait_for=run_task_future)
             submitted_tasks[node.unique_id] = test_task_future
-        else:
-            submitted_tasks[node.unique_id] = run_task_future
+
+        if run_prefect_task:
+            # Wait for the dbt test task if it exists
+            if run_dbt_test:
+                prefect_task_future = run_task_after_model.submit(wait_for=test_task_future)
+            else:
+                prefect_task_future = run_task_after_model.submit(wait_for=run_task_future)
+            submitted_tasks[node.unique_id] = prefect_task_future
 
 
 def _get_next_node(
