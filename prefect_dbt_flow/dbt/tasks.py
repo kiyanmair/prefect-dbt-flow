@@ -214,8 +214,6 @@ def generate_tasks_dag(
     profile: Optional[DbtProfile],
     dag_options: Optional[DbtDagOptions],
     dbt_graph: List[DbtNode],
-    run_test_after_model: bool = False,
-    run_task_after_model: Optional[Task] = None,
 ) -> None:
     """
     Generate a Prefect DAG for running and testing dbt models.
@@ -225,14 +223,10 @@ def generate_tasks_dag(
         profile: A class that represents a dbt profile configuration.
         dag_options: A class to add dbt DAG configurations.
         dbt_graph: A list of dbt nodes (models) to include in the DAG.
-        run_test_after_model: If True, run dbt tests after running each model.
-        run_task_after_model: A Prefect task to run after each model.
 
     Returns:
         None
     """
-
-    # TODO: refactor this
     all_tasks = {
         dbt_node.unique_id: RESOURCE_TYPE_TO_TASK[dbt_node.resource_type](
             project=project,
@@ -248,13 +242,19 @@ def generate_tasks_dag(
         # Get dbt dependencies for current run task
         run_task = all_tasks[node.unique_id]
         task_dependencies = [
-            submitted_tasks[node_unique_id] for node_unique_id in node.depends_on
+            submitted_tasks[node_unique_id]
+            for node_unique_id in node.depends_on
         ]
         # Future for the run task
         future = _chain_tasks(run_task, task_dependencies)
 
-        # Run dbt test task if applicable
-        if run_test_after_model and node.has_tests:
+        # Check if we should run a dbt test task
+        should_run_tests = (
+            dag_options 
+            and dag_options.run_test_after_model 
+            and node.has_tests
+        )
+        if should_run_tests:
             test_task = _task_dbt_test(
                 project=project,
                 profile=profile,
@@ -264,8 +264,13 @@ def generate_tasks_dag(
             # Future for the test task, depending on the run future
             future = _chain_tasks(test_task, future)
 
-        # Run Prefect task if applicable
-        if run_task_after_model and node.resource_type is DbtResourceType.MODEL:
+        # Check if we should run a Prefect task
+        should_run_prefect_task = (
+            dag_options 
+            and dag_options.run_task_after_model 
+            and node.resource_type is DbtResourceType.MODEL
+        )
+        if should_run_prefect_task:
             # Future for the Prefect task, depending on the previous future
             future = _chain_tasks(run_task_after_model, future)
 
